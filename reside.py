@@ -1,3 +1,4 @@
+from base import Model
 from helper import *
 import tensorflow as tf
 
@@ -5,13 +6,24 @@ import tensorflow as tf
 Abbreviations used in variable names:
 	Type:  Entity type side informatoin
 	ProbY, RelAlias: Relation alias side information
-NOTE: View this file with tab size 8.
+Recommendation: View this file with tab size 8.
 """
 
-class RESIDE(object):
+class RESIDE(Model):
 
-	# Generates batches of multiple bags
 	def getBatches(self, data, shuffle = True):
+		"""
+	        Generates batches of multiple bags
+
+	        Parameters
+	        ----------
+	        data:		Data to be used for creating batches. Dataset as list of bags where each bag is a dictionary
+	        shuffle:	Decides whether to shuffle the data or not.
+	        
+	        Returns
+	        -------
+	        Generator for creating batches. 
+	        """
 		if shuffle: random.shuffle(data)
 
 		for chunk in getChunks(data, self.p.batch_size):			# chunk = batch
@@ -37,95 +49,12 @@ class RESIDE(object):
 
 			yield batch
 
-	# Split bags which are too big (contains greater than chunk_size sentences)
-	def splitBags(self, data, chunk_size):
-		for dtype in ['train']:
-
-			for i in range(len(data[dtype])-1, -1, -1):
-				bag = data[dtype][i]
-
-				if len(bag['X']) > chunk_size:
-					del data[dtype][i]
-					chunks = getChunks(range(len(bag['X'])), chunk_size)
-
-					for chunk in chunks:
-						res = {
-							'Y': 		bag['Y'],
-							'SubType':	bag['SubType'],
-							'ObjType':	bag['ObjType']
-						}
-
-						res['X']    	 = [bag['X'][j]    	for j in chunk]
-						res['Pos1'] 	 = [bag['Pos1'][j] 	for j in chunk]
-						res['Pos2'] 	 = [bag['Pos2'][j] 	for j in chunk]
-						res['DepEdges']  = [bag['DepEdges'][j]  for j in chunk]
-						res['ProbY']  	 = [bag['ProbY'][j]  	for j in chunk]
-
-						data[dtype].append(res)
-		return data
-
-	# Required for P@N metric evaluation
-	def getPdata(self, data):
-		p_one = []
-		p_two = []
-
-		for bag in data['test']:
-			if len(bag['X']) < 2: continue
-
-			indx = list(range(len(bag['X'])))
-			random.shuffle(indx)
-
-			p_one.append({
-				'X':    	[bag['X'][indx[0]]],
-				'Pos1': 	[bag['Pos1'][indx[0]]],
-				'Pos2': 	[bag['Pos2'][indx[0]]],
-				'DepEdges': 	[bag['DepEdges'][indx[0]]],
-				'ProbY': 	[bag['ProbY'][indx[0]]],
-				'Y':    	bag['Y'],
-				'SubType':	bag['SubType'],
-				'ObjType':	bag['ObjType']
-			})
-
-			p_two.append({
-				'X':    	[bag['X'][indx[0]], bag['X'][indx[1]]],
-				'Pos1': 	[bag['Pos1'][indx[0]], bag['Pos1'][indx[1]]],
-				'Pos2': 	[bag['Pos2'][indx[0]], bag['Pos2'][indx[1]]],
-				'DepEdges': 	[bag['DepEdges'][indx[0]], bag['DepEdges'][indx[1]]],
-				'ProbY': 	[bag['ProbY'][indx[0]], bag['ProbY'][indx[1]]],
-				'Y':   	 	bag['Y'],
-				'SubType':	bag['SubType'],
-				'ObjType':	bag['ObjType']
-			})
-
-		return p_one, p_two
-
-	# Reads the data from pickle file
-	def load_data(self):
-		data = pickle.load(open(self.p.dataset, 'rb'))
-
-		self.voc2id 	   = data['voc2id']
-		self.id2voc 	   = data['id2voc']
-		self.type2id 	   = data['type2id']
-		self.type_num	   = len(data['type2id'])
-		self.max_pos 	   = data['max_pos']						# Maximum position distance
-		self.num_class     = len(data['rel2id'])
-		self.num_deLabel   = 1
-
-		# Get Word List
-		self.wrd_list 	   = list(self.voc2id.items())					# Get vocabulary
-		self.wrd_list.sort(key=lambda x: x[1])						# Sort vocabulary based on ids
-		self.wrd_list,_    = zip(*self.wrd_list)
-
-		self.test_one,\
-		self.test_two	   = self.getPdata(data)
-
-		self.data 	   = data
-		# self.data	   = self.splitBags(data, self.p.chunk_size)			# Activate if bag sizes are too big
-
-		self.logger.info('Document count [{}]: {}, [{}]: {}'.format('train', len(self.data['train']), 'test', len(self.data['test'])))
-
 
 	def add_placeholders(self):
+		"""
+		Defines the placeholder required for the model
+		"""
+
 		self.input_x  		= tf.placeholder(tf.int32,   shape=[None, None],   name='input_data')			# Tokens ids of sentences
 		self.input_y 		= tf.placeholder(tf.int32,   shape=[None, None],   name='input_labels')			# Actual relation of the bag
 		self.input_pos1 	= tf.placeholder(tf.int32,   shape=[None, None],   name='input_pos1')			# Position ids wrt entity 1
@@ -138,44 +67,49 @@ class RESIDE(object):
 		self.input_objtype_len 	= tf.placeholder(tf.float32, shape=[None],   	   name='input_objtype_len')		# Max number of types of entity 2 
 
 		# Relation Alias Side Information
-		self.input_proby 	= tf.placeholder(tf.float32, shape=[None, None],   name='input_prob_y')			# Probable relation match
-		self.input_proby_ind 	= tf.placeholder(tf.int32,   shape=[None, None],   name='input_prob_ind')
-		self.input_proby_len 	= tf.placeholder(tf.float32, shape=[None],   	   name='input_prob_len')		# Max number of relation matched
+		self.input_proby_ind 	= tf.placeholder(tf.int32,   shape=[None, None],   name='input_prob_ind')		# Relation Alias information Indices
+		self.input_proby_len 	= tf.placeholder(tf.float32, shape=[None],   	   name='input_prob_len')		# Max number of relations per bag for the entire batch
 
 		self.x_len		= tf.placeholder(tf.int32,   shape=[None],         name='input_len')			# Number of words in sentences in a batch
-		self.sent_num 		= tf.placeholder(tf.int32,   shape=[None, 3], 	   name='sent_num')			# Stores which sentences belong to which bag
+		self.sent_num 		= tf.placeholder(tf.int32,   shape=[None, 3], 	   name='sent_num')			# Stores which sentences belong to which bag | [start_index, end_index, bag_number]
 		self.seq_len 		= tf.placeholder(tf.int32,   shape=(), 		   name='seq_len')			# Max number of tokens in sentences in a batch
 		self.total_bags 	= tf.placeholder(tf.int32,   shape=(), 		   name='total_bags')			# Total number of bags in a batch
 		self.total_sents 	= tf.placeholder(tf.int32,   shape=(), 		   name='total_sents')			# Total number of sentences in a batch
 
-		self.de_adj_ind 	= tf.placeholder(tf.int64,   shape=[self.num_deLabel, None, None, 2], name='de_adj_ind')# Dependency graph information (Storing only indices and data)
-		self.de_adj_data 	= tf.placeholder(tf.float32, shape=[self.num_deLabel, None, None], name='de_adj_data')
+		self.de_adj_ind 	= tf.placeholder(tf.int64,   shape=[self.num_deLabel, None, None,2], name='de_adj_ind') # Dependency graph indices
+		self.de_adj_data 	= tf.placeholder(tf.float32, shape=[self.num_deLabel, None, None],  name='de_adj_data')	# Dependency graph data
 
 		self.dropout 		= tf.placeholder_with_default(self.p.dropout, 	  shape=(), name='dropout')		# Dropout used in GCN Layer
 		self.rec_dropout 	= tf.placeholder_with_default(self.p.rec_dropout, shape=(), name='rec_dropout')		# Dropout used in Bi-LSTM
 
-	# Pads the data in a batch
-	def padData(self, data, seq_len):
-		temp = np.zeros((len(data), seq_len), np.int32)
-		mask = np.zeros((len(data), seq_len), np.float32)
 
-		for i, ele in enumerate(data):
-			temp[i, :len(ele)] = ele[:seq_len]
-			mask[i, :len(ele)] = np.ones(len(ele[:seq_len]), np.float32)
-
-		return temp, mask
-
-	# Generates the one-hot representation
-	def getOneHot(self, data, num_class, isprob=False):
-		temp = np.zeros((len(data), num_class), np.int32)
-		for i, ele in enumerate(data):
-			for rel in ele:
-				if isprob:	temp[i, rel-1] = 1
-				else:		temp[i, rel]   = 1
-		return temp
-
-	# Pads each batch during runtime.
 	def pad_dynamic(self, X, pos1, pos2, sub_type, obj_type, rel_alias):
+		"""
+		Pads each batch during runtime.
+
+		Parameters
+		----------
+		X:		For each sentence in the bag, list of words
+		pos1:		For each sentence in the bag, list position of words with respect to subject
+		pos2:		For each sentence in the bag, list position of words with respect to object
+		sub_type:	For each sentence in the bag, Entity type information of the subject
+		obj_type:	For each sentence in the bag, Entity type information of the object
+		rel_aliaes:	For each sentence in the bag, Relation Alias information
+
+		Returns
+		-------
+		x_pad		Padded words 
+		x_len		Number of sentences in each sentence, 
+		pos1_pad	Padded position 1
+		pos2_pad	Padded position 2
+		seq_len 	Maximum sentence length in the batch
+		subtype 	Padded subject entity type information
+		subtype_len 	Number of entity type for each bag in the batch
+		objtype 	Padded objective entity type information
+		objtype_len 	Number of entity type for each bag in the batch
+		rel_alias_ind 	Padded relation aliasses for each bag in the batch
+		rel_alias_len	Number of relation aliases 
+		"""
 		seq_len, max_et, max_type, max_proby = 0, 0, 0, 0
 		subtype_len, objtype_len, rel_alias_len = [], [], []
 
@@ -207,7 +141,20 @@ class RESIDE(object):
 		return x_pad, x_len, pos1_pad, pos2_pad, seq_len, subtype, subtype_len, objtype, objtype_len, rel_alias_ind, rel_alias_len
 
 
-	def create_feed_dict(self, batch, wLabels=True, dtype='train'):									# Where putting dropout for train?
+	def create_feed_dict(self, batch, wLabels=True, split='train'):
+		"""
+		Creates a feed dictionary for the batch
+
+		Parameters
+		----------
+		batch:		contains a batch of bags
+		wLabels:	Whether batch contains labels or not
+		split:		Indicates the split of the data - train/valid/test
+
+		Returns
+		-------
+		feed_dict	Feed dictionary to be fed during sess.run
+		"""
 		X, Y, pos1, pos2, sent_num, sub_type, obj_type, rel_alias = batch['X'], batch['Y'], batch['Pos1'], batch['Pos2'], batch['sent_num'], batch['SubType'], batch['ObjType'], batch['ProbY']
 		total_sents = len(batch['X'])
 		total_bags  = len(batch['Y'])
@@ -222,7 +169,6 @@ class RESIDE(object):
 		feed_dict[self.input_pos2]		= np.array(pos2_pad)
 		feed_dict[self.input_subtype]		= np.array(subtype)
 		feed_dict[self.input_objtype]		= np.array(objtype)
-		feed_dict[self.input_proby]		= np.array(proby)
 		feed_dict[self.x_len] 			= np.array(x_len)
 		feed_dict[self.seq_len]			= seq_len
 		feed_dict[self.total_sents]		= total_sents
@@ -238,7 +184,7 @@ class RESIDE(object):
 		feed_dict[self.de_adj_ind], \
 		feed_dict[self.de_adj_data] 		= self.get_adj(batch['DepEdges'], total_sents, seq_len, self.num_deLabel)
 
-		if dtype != 'train':
+		if split != 'train':
 			feed_dict[self.dropout]     = 1.0
 			feed_dict[self.rec_dropout] = 1.0
 		else:
@@ -247,8 +193,22 @@ class RESIDE(object):
 
 		return feed_dict
 
-	# Stores the adjacency matrix as indices and data for feeding to TensorFlow
 	def get_adj(self, edgeList, batch_size, max_nodes, max_labels):
+		"""
+		Stores the adjacency matrix as indices and data for feeding to TensorFlow
+
+		Parameters
+		----------
+		edgeList:	List of list of edges 
+		batch_size:	Number of bags in a batch
+		max_nodes:	Maximum number of nodes in the graph
+		max_labels:	Maximum number of edge labels in the graph 
+
+		Returns
+		-------
+		adj_mat_ind 	indices of adjacency matrix
+		adj_mat_data	data of adjacency matrix
+		"""
 		max_edges = 0
 		for edges in edgeList:
 			max_edges = max(max_edges, len(edges))
@@ -265,18 +225,29 @@ class RESIDE(object):
 
 		return adj_mat_ind, adj_mat_data
 
-	# GCN Layer Implementation 
-	def GCNLayer(self, 	gcn_in, 	# Input to GCN Layer
-				in_dim, 	# Dimension of input to GCN Layer 
-				gcn_dim, 	# Hidden state dimension of GCN
-				batch_size, 	# Batch size
-				max_nodes, 	# Maximum number of nodes in graph
-				max_labels, 	# Maximum number of edge labels
-				adj_ind, 	# Adjacency matrix indices
-				adj_data, 	# Adjacency matrix data (all 1's)
-				w_gating=True,  # Whether to include gating in GCN
-				num_layers=1, 	# Number of GCN Layers
-				name="GCN"):
+	def GCNLayer(self, gcn_in, in_dim, gcn_dim, batch_size, max_nodes, max_labels, adj_ind, adj_data, w_gating=True, num_layers=1, name="GCN"):
+		"""
+		GCN Layer Implementation
+
+		Parameters
+		----------
+		gcn_in:		Input to GCN Layer
+		in_dim:		Dimension of input to GCN Layer 
+		gcn_dim:	Hidden state dimension of GCN
+		batch_size:	Batch size
+		max_nodes:	Maximum number of nodes in graph
+		max_labels:	Maximum number of edge labels
+		adj_ind:	Adjacency matrix indices
+		adj_data:	Adjacency matrix data (all 1's)
+		w_gating:	Whether to include gating in GCN
+		num_layers:	Number of GCN Layers
+		name 		Name of the layer (used for creating variables, keep it different for different layers)
+
+		Returns
+		-------
+		out		List of output of different GCN layers with first element as input itself, i.e., [gcn_in, gcn_layer1_out, gcn_layer2_out ...]
+		"""
+
 		out = []
 		out.append(gcn_in)
 
@@ -372,11 +343,22 @@ class RESIDE(object):
 
 
 	def add_model(self):
+		"""
+		Creates the Computational Graph
+
+		Parameters
+		----------
+
+		Returns
+		-------
+		nn_out:		Logits for each bag in the batch
+		accuracy:	accuracy for the entire batch
+		"""
+
 		in_wrds, in_pos1, in_pos2 = self.input_x, self.input_pos1, self.input_pos2
 
 		with tf.variable_scope('Embeddings') as scope:
-			model 	  	= gensim.models.KeyedVectors.load_word2vec_format(self.p.embed_loc, binary=False)
-			embed_init 	= getEmbeddings(model, self.wrd_list, self.p.embed_dim)
+			embed_init 	= getEmbeddings(self.wrd_list, self.p.embed_dim, self.p.embed_loc)
 			_wrd_embeddings = tf.get_variable('embeddings', initializer=embed_init, trainable=True, regularizer=self.regularizer)
 			wrd_pad  	= tf.zeros([1, self.p.embed_dim])
 			wrd_embeddings  = tf.concat([wrd_pad, _wrd_embeddings], axis=0)
@@ -481,206 +463,24 @@ class RESIDE(object):
 			y_actual = tf.argmax(self.input_y, axis=1)
 			accuracy = tf.reduce_mean(tf.cast(tf.equal(y_pred, y_actual), tf.float32))
 
-		''' Debugging command :
+		''' Debugging command:
+			Put the below command anywhere and get the values of the tensors (Use TF like PyTorch!)
 			res  = debug_nn([de_out], self.create_feed_dict( next(self.getBatches(self.data['train'])) ) ); pdb.set_trace()
 		'''
 		return nn_out, accuracy
 
-
-	def add_loss(self, nn_out):
-		with tf.name_scope('Loss_op'):
-			loss  = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(logits=nn_out, labels=self.input_y))
-			if self.regularizer != None: loss += tf.contrib.layers.apply_regularization(self.regularizer, tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES))
-		return loss
-
-	def add_optimizer(self, loss):
-		with tf.name_scope('Optimizer'):
-			if self.p.opt == 'adam' and not self.p.restore:
-				optimizer = tf.train.AdamOptimizer(self.p.lr)
-			else:		
-				optimizer = tf.train.GradientDescentOptimizer(self.p.lr)
-			train_op  = optimizer.minimize(loss)
-		return train_op
-
 	def __init__(self, params):
-		self.p  = params
-		self.logger = get_logger(self.p.name, self.p.log_dir, self.p.config_dir)
+		"""
+		Constructor for the main function. Loads data and creates computation graph. 
 
-		self.logger.info(vars(self.p)); pprint(vars(self.p))
-		self.p.batch_size = self.p.batch_size
+		Parameters
+		----------
+		params:		Hyperparameters of the model
 
-		if self.p.l2 == 0.0: 	self.regularizer = None
-		else: 			self.regularizer = tf.contrib.layers.l2_regularizer(scale=self.p.l2)
-
-		self.load_data()
-		self.add_placeholders()
-
-		nn_out, self.accuracy = self.add_model()
-
-		self.loss      	= self.add_loss(nn_out)
-		self.logits  	= tf.nn.softmax(nn_out)
-		self.train_op   = self.add_optimizer(self.loss)
-
-		tf.summary.scalar('accmain', self.accuracy)
-		self.merged_summ = tf.summary.merge_all()
-		self.summ_writer = None
-
-	# Evaluate model on valid/test data
-	def predict(self, sess, data, wLabels=True, shuffle=False, label='Evaluating on Test'):
-		losses, accuracies, results, y_pred, y, logit_list, y_actual_hot = [], [], [], [], [], [], []
-		bag_cnt = 0
-
-		for step, batch in enumerate(self.getBatches(data, shuffle)):
-
-			loss, logits, accuracy = sess.run([self.loss, self.logits, self.accuracy], feed_dict = self.create_feed_dict(batch, dtype='test'))
-			losses.    append(loss)
-			accuracies.append(accuracy)
-
-			pred_ind      = logits.argmax(axis=1)
-			logit_list   += logits.tolist()
-			y_actual_hot += self.getOneHot(batch['Y'], self.num_class).tolist()
-			y_pred       += pred_ind.tolist()
-			y 	     += np.argmax(self.getOneHot(batch['Y'], self.num_class), 1).tolist()
-			bag_cnt      += len(batch['sent_num'])
-
-			results.append(pred_ind)
-
-			if step % 100 == 0:
-				self.logger.info('{} ({}/{}):\t{:.5}\t{:.5}\t{}'.format(label, bag_cnt, len(self.data['test']), np.mean(accuracies)*100, np.mean(losses), self.p.name))
-
-		self.logger.info('Test Accuracy: {}'.format(accuracy))
-
-		return np.mean(losses), results,  np.mean(accuracies)*100, y, y_pred, logit_list, y_actual_hot
-
-	# Runs one epoch of training
-	def run_epoch(self, sess, data, epoch, shuffle=True):
-		losses, accuracies = [], []
-		bag_cnt = 0
-
-		for step, batch in enumerate(self.getBatches(data, shuffle)):
-			feed = self.create_feed_dict(batch)
-			summary_str, loss, accuracy, _ = sess.run([self.merged_summ, self.loss, self.accuracy, self.train_op], feed_dict=feed)
-
-			losses.    append(loss)
-			accuracies.append(accuracy)
-
-			bag_cnt += len(batch['sent_num'])
-
-			if step % 10 == 0:
-				self.logger.info('E:{} Train Accuracy ({}/{}):\t{:.5}\t{:.5}\t{}\t{:.5}'.format(epoch, bag_cnt, len(self.data['train']), np.mean(accuracies)*100, np.mean(losses), self.p.name, self.best_train_acc))
-				self.summ_writer.add_summary(summary_str, epoch*len(self.data['train']) + bag_cnt)
-
-		accuracy = np.mean(accuracies) * 100.0
-		self.logger.info('Training Loss:{}, Accuracy: {}'.format(np.mean(losses), accuracy))
-		return np.mean(losses), accuracy
-
-	# Calculates precision recall and F1 score
-	def calc_prec_recall_f1(self, y_actual, y_pred, none_id):
-		pos_pred, pos_gt, true_pos = 0.0, 0.0, 0.0
-
-		for i in range(len(y_actual)):
-			if y_actual[i] != none_id:
-				pos_gt += 1.0
-
-		for i in range(len(y_pred)):
-			if y_pred[i] != none_id:
-				pos_pred += 1.0					# classified as pos example (Is-A-Relation)
-				if y_pred[i] == y_actual[i]:
-					true_pos += 1.0
-
-		precision 	= true_pos / (pos_pred + self.p.eps)
-		recall 		= true_pos / (pos_gt + self.p.eps)
-		f1 		= 2 * precision * recall / (precision + recall + self.p.eps)
-
-		return precision, recall, f1
-
-	# Computes P@N for N = 100, 200, and 300
-	def getPscore(self, data, label='P@N Evaluation'):
-		test_loss, test_pred, test_acc, y, y_pred, logit_list, y_hot = self.predict(sess, data, label)
-
-		y_true   = np.array([e[1:] for e in y_hot]).  	 reshape((-1))
-		y_scores = np.array([e[1:] for e in logit_list]).reshape((-1))
-
-		allprob = np.reshape(np.array(y_scores), (-1))
-		allans  = np.reshape(y_true, (-1))
-		order   = np.argsort(-allprob)
-
-		def p_score(n):
-			corr_num = 0.0
-			for i in order[:n]:
-				corr_num += 1.0 if (allans[i] == 1) else 0
-			return corr_num / n
-
-		return p_score(100), p_score(200), p_score(300)
-
-	# Trains the model and finally evaluates on test
-	def fit(self, sess):
-		self.summ_writer = tf.summary.FileWriter('tf_board/{}'.format(self.p.name), sess.graph)
-		saver     = tf.train.Saver()
-		save_dir  = 'checkpoints/{}/'.format(self.p.name); make_dir(save_dir)
-		res_dir   = 'results/{}/'.format(self.p.name);     make_dir(res_dir)
-		save_path = os.path.join(save_dir, 'best_model')
-		
-		# Restore previously trained model
-		if self.p.restore: 
-			saver.restore(sess, save_path)
-
-		''' Train model '''
-		if not self.p.only_eval:
-			self.best_train_acc = 0.0
-			for epoch in range(self.p.max_epochs):
-				train_loss, train_acc = self.run_epoch(sess, self.data['train'], epoch)
-				self.logger.info('[Epoch {}]: Training Loss: {:.5}, Training Acc: {:.5}\n'.format(epoch, train_loss, train_acc))
-
-				# Store the model with least train loss
-				if train_acc > self.best_train_acc:
-					self.best_train_acc = train_acc
-					saver.save(sess=sess, save_path=save_path)
-		
-		''' Evaluation on Test '''
-		saver.restore(sess, save_path)
-		test_loss, test_pred, test_acc, y, y_pred, logit_list, y_hot = self.predict(sess, self.data['test'])
-		test_prec, test_rec, test_f1 				     = self.calc_prec_recall_f1(y, y_pred, 0)	# 0: ID for 'NA' relation
-
-		y_true   = np.array([e[1:] for e in y_hot]).  	 reshape((-1))
-		y_scores = np.array([e[1:] for e in logit_list]).reshape((-1))
-		area_pr  = average_precision_score(y_true, y_scores)
-
-		self.logger.info('Final results: Prec:{} | Rec:{} | F1:{} | Area:{}'.format(test_prec, test_rec, test_f1, area_pr))
-		# Store predictions
-		pickle.dump({'logit_list': logit_list, 'y_hot': y_hot}, open("results/{}/precision_recall.pkl".format(self.p.name), 'wb'))
-
-		''' P@N Evaluation '''
-
-		# P@1
-		one_100, one_200, one_300 = self.getPscore(self.test_one, label='P@1 Evaluation')
-		self.logger.info('TEST_ONE: P@100: {}, P@200: {}, P@300: {}'.format(one_100, one_200, one_300))
-		one_avg = (one_100 + one_200 + one_300)/3
-
-		# P@2
-		two_100, two_200, two_300 = self.getPscore(self.test_two, label='P@2 Evaluation')
-		self.logger.info('TEST_TWO: P@100: {}, P@200: {}, P@300: {}'.format(two_100, two_200, two_300))
-		two_avg = (two_100 + two_200 + two_300)/3
-
-		# P@All
-		all_100, all_200, all_300 = self.getPscore(self.data['test'], label='P@All Evaluation')
-		self.logger.info('TEST_THREE: P@100: {}, P@200: {}, P@300: {}'.format(all_100, all_200, all_300))
-		all_avg = (all_100 + all_200 + all_300)/3
-
-		pprint ({
-				'one_100':  one_100,
-				'one_200':  one_200,
-				'one_300':  one_300,
-				'mean_one': one_avg,
-				'two_100':  two_100,
-				'two_200':  two_200,
-				'two_300':  two_300,
-				'mean_two': two_avg,
-				'all_100':  all_100,
-				'all_200':  all_200,
-				'all_300':  all_300,
-				'mean_all': all_avg,
-		})
+		Returns
+		-------
+		"""
+		super(RESIDE, self).__init__(params)
 
 
 if __name__== "__main__":
@@ -715,7 +515,7 @@ if __name__== "__main__":
 	parser.add_argument('-seed', 	 dest="seed", 		default=1234, 			type=int,			help='Seed for randomization')
 	parser.add_argument('-logdir',	 dest="log_dir", 	default='./log/', 						help='Log directory')
 	parser.add_argument('-config',	 dest="config_dir", 	default='./config/', 						help='Config directory')
-	parser.add_argument('-embed_loc',dest="embed_loc", 	default='./glove/glove.6B.50d_word2vec.txt', 			help='Log directory')
+	parser.add_argument('-embed_loc',dest="embed_loc", 	default='./glove/glove.6B.50d.txt', 				help='Path of word embedding file')
 	parser.add_argument('-embed_dim',dest="embed_dim", 	default=50, type=int,						help='Dimension of embedding')
 	args = parser.parse_args()
 
