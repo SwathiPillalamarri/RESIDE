@@ -5,6 +5,7 @@ from helper import *
 from scipy.spatial.distance import cdist
 from joblib import Parallel, delayed
 from orderedset import OrderedSet
+import re
 
 parser = argparse.ArgumentParser(description='Main Preprocessing program')
 parser.add_argument('-test', 	 dest="FULL", 		action='store_false')
@@ -64,6 +65,10 @@ def read_file(file_path):
 
 	with open(file_path) as f:
 		for k, line in enumerate(f):
+                        if file_path=='data/{}_train_bags.json'.format(args.data) and (k==176 or k==250 or k==581 or k==696):
+                            continue    
+                        elif file_path=='data/{}_test_bags.json'.format(args.data) and (k==24 or k==62 or k==91 or k==106 or k==137 or k==219 or k==229 or k==370 or k==395 or k==473 or k==568 or k==598 or k==613 or k==638):
+                            continue
 			bag   = json.loads(line.strip())
 
 			wrds_list 	= []
@@ -73,7 +78,6 @@ def read_file(file_path):
 			obj_pos_list    = []
 			dep_links_list 	= []
 			phrase_list 	= []
-
 			for sent in bag['sents']:
 
 				if len(bag['sub']) > len(bag['obj']):
@@ -99,7 +103,7 @@ def read_file(file_path):
 
 				sub_off = [(start_off, start_off + len(bag['sub']), 'sub') for start_off in sub_start_off]
 				obj_off = [(start_off, start_off + len(bag['obj']), 'obj') for start_off in obj_start_off]
-
+                                
 				if sub_off == [] or obj_off == [] or 'corenlp' not in sent: continue
 				spans = [sub_off[0]] + [obj_off[0]]
 				off_begin, off_end, _ = zip(*spans)
@@ -137,12 +141,18 @@ def read_file(file_path):
 
 							i       += 1
 							tok_idx += 1
-
-
+                                                print(k)
+                            
 				if sub_pos == None or obj_pos == None: 
 					print('Skipped entry!!')
-					print('{} | {} | {}'.format(bag['sub'], bag['obj'], sent['sent']))
-					pdb.set_trace()
+                                        try:
+					    print('{} | {} | {}'.format(bag['sub'], bag['obj'], sent['sent']))
+                                        except:
+                                            sub1 = bag['sub'].encode('utf-8')
+                                            obj1 = bag['obj'].encode('utf-8')
+                                            sent1 = sent['sent'].encode('utf-8')
+					    print('{} | {} | {}'.format(sub1, obj1, sent1))
+					#pdb.set_trace()
 					continue
 
 				wrds    = ['_'.join(e).lower() 	for e in tid2wrd.values()]
@@ -220,7 +230,7 @@ def read_file(file_path):
 				'dep_links_list':	dep_links_list,
 			})
 				
-			if k % 1000 == 0: print('Completed {}'.format(k))
+			if k % 100 == 0: print('Completed {}'.format(k))
 			if not args.FULL and k > args.sample_size: break
 	return temp
 
@@ -271,6 +281,7 @@ def get_prob_rels(data):
 
 	return res_list
 
+print('get probable relations')
 train_mega_phr_list = []
 for i, bag in enumerate(data['train']):
 	train_mega_phr_list.append({
@@ -293,12 +304,15 @@ for i, bag in enumerate(data['test']):
 	})
 
 chunks  = partition(test_mega_phr_list, args.num_procs)
+print(args.num_procs)
 results = mergeList(Parallel(n_jobs = args.num_procs)(delayed(get_prob_rels)(chunk) for chunk in chunks))
 for res in results:
 	data['test'][res['bag_index']]['prob_rels'] = res['prob_rels']
 	if len(data['test'][res['bag_index']]['prob_rels']) != len(data['test'][res['bag_index']]['phrase_list']):
 		pdb.set_trace()
 
+print('form vocab')
+chunks  = partition(test_mega_phr_list, args.num_procs)
 """*************************** FORM VOCABULARY **************************"""
 voc_freq = ddict(int)
 for bag in data['train']:
@@ -312,6 +326,7 @@ vocab, _ = map(list, zip(*freq))
 
 vocab.append('UNK')
 
+print('word 2 id map')
 """*************************** WORD 2 ID MAPPING **************************"""
 def getIdMap(vals, begin_idx=0):
 	ele2id = {}
@@ -329,6 +344,7 @@ type2id    = getIdMap(type_vocab)
 print('Chosen Vocabulary:\t{}'.format(len(vocab)))
 print('Type Number:\t{}'.format(len(type2id)))
 
+print('data in tensor form')
 """******************* CONVERTING DATA IN TENSOR FORM **********************"""
 
 def getId(wrd, wrd2id, def_val='NONE'):
@@ -370,7 +386,9 @@ final_data = {
 	'voc2id': 	voc2id,
 	'id2voc': 	id2voc,
 	'type2id':	type2id,
-	'max_pos':	(args.MAX_POS+1)*2 + 1
+	'max_pos':	(args.MAX_POS+1)*2 + 1,
+        'rel2id':   rel2id
 }
 
+print('pckl dump')
 pickle.dump(final_data, open('{}_processed.pkl'.format(args.data), 'wb'))

@@ -12,14 +12,28 @@ print('Constructing training bags...')
 train_data = ddict(lambda: {'rels': ddict(list)})
 with open('./data/{}_train.json'.format(args.data)) as f:
 	for i, line in enumerate(f):
-		data = json.loads(line.strip())
+		#data = json.loads(line.strip())
+                try:
+		    data = json.loads(line.strip())
+                except:
+                    print(line)
+                    print(data)
+                if i%1000==0:
+                    print(i)
 
-		_id = '{}_{}'.format(data['sub'], data['obj'])
+		#_id = '{}_{}'.format(data['sub'], data['obj'])
+                try:
+		    _id = '{}_{}'.format(data['sub'], data['obj'])
+                except:
+                    _idsub = data['sub'].encode('utf-8')
+                    _idobj = data['obj'].encode('utf-8')
+                    _id = '{}_{}'.format(_idsub, _idobj)
 		train_data[_id]['sub_id']	= data['sub_id']
 		train_data[_id]['obj_id'] 	= data['obj_id']
 		train_data[_id]['sub'] 		= data['sub']
 		train_data[_id]['obj'] 		= data['obj']
 
+                print(rel2id.get(data['rel'], rel2id['NA']))
 		train_data[_id]['rels'][rel2id.get(data['rel'], rel2id['NA'])].append({
 				'sent': 	data['sent'],
 				'corenlp':	data['corenlp'],
@@ -35,9 +49,19 @@ print('Constructing test bags...')
 test_data = ddict(lambda : {'sents': [], 'rels': set()})
 with open('./data/{}_test.json'.format(args.data)) as f:
 	for i, line in enumerate(f):
-		data = json.loads(line.strip())
-
-		_id = '{}_{}'.format(data['sub'], data['obj'])
+                if i%1000==0:
+                    print(i)
+                try:
+		    data = json.loads(line.strip())
+                except:
+                    print(data)
+		#_id = '{}_{}'.format(data['sub'], data['obj'])
+                try:
+		    _id = '{}_{}'.format(data['sub'], data['obj'])
+                except:
+                    _idsub = data['sub'].encode('utf-8')
+                    _idobj = data['obj'].encode('utf-8')
+                    _id = '{}_{}'.format(_idsub, _idobj)
 		test_data[_id]['sub_id']	= data['sub_id']
 		test_data[_id]['obj_id'] 	= data['obj_id']
 		test_data[_id]['sub'] 		= data['sub']
